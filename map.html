@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<!-- GeoWaste — Versi Netlify (data di JavaScript, tanpa PHP) -->
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GeoWaste — Analisis Jangkauan TPS</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"/>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --surface-glass: rgba(255, 255, 255, 0.85);
+            --surface2: rgba(241, 245, 249, 0.9);
+            --border: rgba(0, 0, 0, 0.08);
+            --accent: #10b981;
+            --accent-hover: #059669;
+            --accent3: #6366f1;
+            --danger: #ef4444;
+            --text: #0f172a;
+            --text-muted: #64748b;
+            --radius: 16px;
+            --glow: 0 8px 24px rgba(16, 185, 129, 0.25);
+            --shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh; width: 100vw;
+            overflow: hidden; position: relative;
+        }
+
+        #map { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+
+        #sidebar {
+            position: absolute;
+            top: 20px; left: 20px; bottom: 20px; width: 360px;
+            background: var(--surface-glass);
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--border); border-radius: var(--radius);
+            box-shadow: var(--shadow); display: flex; flex-direction: column;
+            overflow-y: auto; z-index: 1000;
+        }
+        #sidebar::-webkit-scrollbar { display: none; }
+        #sidebar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .sidebar-header {
+            flex-shrink: 0; padding: 32px 24px 20px;
+            border-bottom: 1px solid var(--border);
+            position: relative; overflow: hidden;
+        }
+        .sidebar-header::before {
+            content: ''; position: absolute; top: -50px; right: -50px;
+            width: 150px; height: 150px;
+            background: radial-gradient(circle, rgba(16,185,129,0.15), transparent 70%);
+            border-radius: 50%;
+        }
+        .logo-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+        .logo-icon {
+            width: 42px; height: 42px;
+            background: linear-gradient(135deg, var(--accent), #059669);
+            border-radius: 12px; display: flex; align-items: center; justify-content: center;
+            font-size: 20px; color: white; box-shadow: var(--glow);
+        }
+        .logo-text { font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 800; }
+        .logo-text span { color: var(--accent); }
+        .sidebar-subtitle { font-size: 12px; color: var(--text-muted); letter-spacing: 0.5px; }
+
+        .stats-strip {
+            flex-shrink: 0; display: grid; grid-template-columns: 1fr 1fr 1fr;
+            background: rgba(0,0,0,0.02); border-bottom: 1px solid var(--border);
+        }
+        .stat-cell { padding: 16px 12px; text-align: center; border-right: 1px solid var(--border); }
+        .stat-cell:last-child { border-right: none; }
+        .stat-number { font-family: 'Syne', sans-serif; font-size: 24px; font-weight: 700; color: var(--accent); }
+        .stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-top: 4px; font-weight: 600; }
+
+        .section { padding: 20px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+        .section-title {
+            font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+            letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted);
+            margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+        }
+
+        .layer-toggle {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 16px; background: var(--surface2); border-radius: 12px;
+            margin-bottom: 10px; border: 1px solid transparent; cursor: pointer; transition: 0.2s;
+        }
+        .layer-toggle:hover { border-color: var(--border); background: #fff; }
+        .layer-toggle-left { display: flex; align-items: center; gap: 12px; }
+        .layer-dot { width: 12px; height: 12px; border-radius: 50%; }
+        .layer-dot.red  { background: var(--danger); box-shadow: 0 0 10px var(--danger); }
+        .layer-dot.blue { background: var(--accent3); box-shadow: 0 0 10px var(--accent3); }
+        .layer-name  { font-size: 14px; font-weight: 600; }
+        .layer-count { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+        .toggle-switch {
+            width: 40px; height: 22px; background: rgba(0,0,0,0.15);
+            border-radius: 12px; position: relative; transition: 0.3s;
+        }
+        .toggle-switch.on { background: var(--accent); }
+        .toggle-switch::after {
+            content: ''; position: absolute; top: 3px; left: 3px;
+            width: 16px; height: 16px; background: white; border-radius: 50%;
+            transition: 0.3s cubic-bezier(0.4,0,0.2,1); box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .toggle-switch.on::after { transform: translateX(18px); }
+
+        .radius-control { background: var(--surface2); padding: 16px; border-radius: 12px; }
+        .radius-header { display: flex; justify-content: space-between; margin-bottom: 12px; }
+        .radius-label { font-size: 13px; font-weight: 600; color: var(--text); }
+        .radius-value { font-family: 'Syne', sans-serif; font-weight: 700; color: var(--accent); }
+        input[type=range] {
+            width: 100%; height: 6px; -webkit-appearance: none;
+            background: rgba(0,0,0,0.1); border-radius: 3px; outline: none;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+            background: var(--accent); cursor: pointer; box-shadow: 0 2px 6px rgba(16,185,129,0.5);
+        }
+
+        .btn-gw {
+            width: 100%; padding: 12px 16px; border: none; border-radius: 12px;
+            font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            gap: 8px; transition: 0.3s; margin-bottom: 10px;
+        }
+        .btn-gw-primary { background: var(--accent); color: white; }
+        .btn-gw-primary:hover { background: var(--accent-hover); transform: translateY(-2px); box-shadow: var(--glow); }
+        .btn-gw-outline { background: white; border: 1px solid var(--border); color: var(--text); }
+        .btn-gw-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+        #resultPanel {
+            background: rgba(16,185,129,0.05); padding: 16px; border-radius: 12px;
+            border: 1px solid rgba(16,185,129,0.2); display: none;
+        }
+        #resultPanel.active { display: block; animation: fadeUp 0.4s ease; }
+        @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+
+        .result-nearest { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .result-icon {
+            width: 40px; height: 40px; background: var(--accent); border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; color: white; flex-shrink: 0;
+        }
+        .result-name { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: var(--accent); }
+        .result-dist { font-size: 12px; color: var(--text-muted); }
+
+        .leaflet-routing-container { display: none !important; }
+        .leaflet-popup-content-wrapper {
+            background: var(--surface-glass); backdrop-filter: blur(10px); color: var(--text);
+            border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
+        }
+        .leaflet-popup-tip { background: white; }
+        .popup-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 15px; margin-bottom: 8px; color: var(--accent); }
+
+        #mapHud { position: absolute; top: 20px; right: 20px; z-index: 900; display: flex; flex-direction: column; gap: 8px; }
+        .hud-pill {
+            background: var(--surface-glass); backdrop-filter: blur(10px); color: var(--text);
+            border: 1px solid var(--border); border-radius: 20px; padding: 8px 16px;
+            font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px;
+            box-shadow: var(--shadow);
+        }
+        .hud-pill i { color: var(--accent); font-size: 14px; }
+
+        #loadingOverlay {
+            position: absolute; inset: 0; background: rgba(255,255,255,0.85);
+            backdrop-filter: blur(6px); display: none; flex-direction: column;
+            align-items: center; justify-content: center; z-index: 9999;
+        }
+        .spinner {
+            width: 48px; height: 48px; border: 4px solid var(--border);
+            border-top-color: var(--accent); border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #gpsInfo {
+            margin-top: 10px; font-size: 12px; color: var(--text-muted);
+            text-align: center; max-width: 260px; line-height: 1.5;
+        }
+
+        @media (max-width: 768px) {
+            #sidebar {
+                top: auto; left: 0; right: 0; bottom: 0;
+                width: 100%; border-radius: 24px 24px 0 0; height: 55vh;
+            }
+            .leaflet-control-zoom { display: none; }
+            #mapHud { top: 10px; right: 10px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="mapHud">
+    <div class="hud-pill"><i class="bi bi-geo-alt-fill"></i> Helvetia Tengah, Medan</div>
+    <div class="hud-pill"><i class="bi bi-crosshair"></i> <span id="coordText">Arahkan kursor</span></div>
+</div>
+
+<div id="sidebar">
+    <div class="sidebar-header">
+        <div class="logo-row">
+            <div class="logo-icon"><i class="bi bi-trash3-fill"></i></div>
+            <div class="logo-text">Geo<span>Waste</span></div>
+        </div>
+        <div class="sidebar-subtitle">Analisis Spasial Jangkauan TPS Helvetia Tengah</div>
+    </div>
+
+    <div class="stats-strip">
+        <div class="stat-cell"><div class="stat-number" id="statTPS">0</div><div class="stat-label">TPS Aktif</div></div>
+        <div class="stat-cell"><div class="stat-number" id="statPemukiman">0</div><div class="stat-label">Pemukiman</div></div>
+        <div class="stat-cell"><div class="stat-number" id="statCovered">—</div><div class="stat-label">Tercover</div></div>
+    </div>
+
+    <div class="section">
+        <div class="section-title"><i class="bi bi-layers"></i> Layer Kontrol</div>
+        <div class="layer-toggle" onclick="toggleLayer('tps')">
+            <div class="layer-toggle-left">
+                <div class="layer-dot red"></div>
+                <div><div class="layer-name">Titik TPS</div><div class="layer-count">Lokasi Pembuangan</div></div>
+            </div>
+            <div class="toggle-switch on" id="tpsToggle"></div>
+        </div>
+        <div class="layer-toggle" onclick="toggleLayer('pemukiman')">
+            <div class="layer-toggle-left">
+                <div class="layer-dot blue"></div>
+                <div><div class="layer-name">Pemukiman</div><div class="layer-count">Area Penduduk</div></div>
+            </div>
+            <div class="toggle-switch on" id="pemukimanToggle"></div>
+        </div>
+        <div class="layer-toggle" onclick="toggleLayer('circle')">
+            <div class="layer-toggle-left">
+                <div class="layer-dot" style="background:var(--accent)"></div>
+                <div><div class="layer-name">Buffer Radius</div><div class="layer-count">Batas Jangkauan</div></div>
+            </div>
+            <div class="toggle-switch on" id="circleToggle"></div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title"><i class="bi bi-bullseye"></i> Analisis Jangkauan</div>
+        <div class="radius-control">
+            <div class="radius-header">
+                <span class="radius-label">Batas Jarak Ideal</span>
+                <span class="radius-value" id="radiusDisplay">500 m</span>
+            </div>
+            <input type="range" id="radiusSlider" min="100" max="2000" step="50" value="500" oninput="updateRadius(this.value)">
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title"><i class="bi bi-cpu"></i> Eksekusi Panel</div>
+        <button class="btn-gw btn-gw-primary" onclick="getLocation()">
+            <i class="bi bi-geo-fill"></i> Cari TPS Terdekat dari Saya
+        </button>
+        <button class="btn-gw btn-gw-outline" onclick="analyzeAllCoverage()">
+            <i class="bi bi-activity"></i> Proses Analisis Pemukiman
+        </button>
+        <button class="btn-gw btn-gw-outline" style="color:var(--danger);border-color:rgba(239,68,68,0.3)" onclick="resetAll()">
+            <i class="bi bi-arrow-clockwise"></i> Reset Peta
+        </button>
+    </div>
+
+    <div class="section" style="border-bottom:none">
+        <div class="section-title"><i class="bi bi-clipboard-data"></i> Rekomendasi Sistem</div>
+        <div id="noResult" style="font-size:13px;color:var(--text-muted);text-align:center;padding:10px 0;">
+            Menunggu perintah analisis...
+        </div>
+        <div id="resultPanel"></div>
+    </div>
+</div>
+
+<div id="loadingOverlay">
+    <div class="spinner"></div>
+    <div style="margin-top:16px;font-weight:600;color:var(--text);letter-spacing:1px" id="loadingText">
+        Mendeteksi Lokasi GPS...
+    </div>
+    <div id="gpsInfo">Pastikan GPS aktif di perangkat Anda.</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+<script>
+
+// ╔══════════════════════════════════════════╗
+// ║   DATA TPS — 2 titik                    ║
+// ╚══════════════════════════════════════════╝
+const DATA_TPS = [
+    { id: 1, nama: "TPS Helteng",  alamat: "Jl. Kapten Sumarsono", lat: 3.615985, lng: 98.635730 },
+    { id: 2, nama: "Botot Peduli", alamat: "Jl. Mesjid",           lat: 3.615216, lng: 98.650791 }
+];
+
+// ╔══════════════════════════════════════════╗
+// ║   DATA PEMUKIMAN — 25 titik             ║
+// ╚══════════════════════════════════════════╝
+const DATA_PEMUKIMAN = [
+    { id:  1, nama: "SMAN 12 Medan",                          lat: 3.612370, lng: 98.641005 },
+    { id:  2, nama: "Om Fairuddin",                           lat: 3.614460, lng: 98.641866 },
+    { id:  3, nama: "Kak Yunda",                              lat: 3.614053, lng: 98.641193 },
+    { id:  4, nama: "Daffa Dzakwan",                          lat: 3.614959, lng: 98.642034 },
+    { id:  5, nama: "Pak Ridwan",                             lat: 3.615071, lng: 98.637916 },
+    { id:  6, nama: "Kak Sela",                               lat: 3.614008, lng: 98.636818 },
+    { id:  7, nama: "Gereja HKBP Mawar Helvetia",             lat: 3.613444, lng: 98.637415 },
+    { id:  8, nama: "Peternak Babi Pak Ucok",                 lat: 3.614113, lng: 98.637652 },
+    { id:  9, nama: "RSU Azizi",                              lat: 3.615805, lng: 98.641989 },
+    { id: 10, nama: "Masjid Al-Mukhlisin",                    lat: 3.613002, lng: 98.641042 },
+    { id: 11, nama: "Bu Lia",                                 lat: 3.612286, lng: 98.642901 },
+    { id: 12, nama: "Warung Bakso Kak Takia",                 lat: 3.612202, lng: 98.642786 },
+    { id: 13, nama: "ML Motor Bang Andre",                    lat: 3.611961, lng: 98.642661 },
+    { id: 14, nama: "Raisya Laundry",                         lat: 3.612423, lng: 98.642791 },
+    { id: 15, nama: "Yayasan Panti Asuhan Grace Bethesda",    lat: 3.612479, lng: 98.642819 },
+    { id: 16, nama: "Kak Fifi",                               lat: 3.612626, lng: 98.642445 },
+    { id: 17, nama: "Bu Bertha",                              lat: 3.613465, lng: 98.642220 },
+    { id: 18, nama: "Nadya",                                  lat: 3.613676, lng: 98.641875 },
+    { id: 19, nama: "Kak Dita",                               lat: 3.613693, lng: 98.641609 },
+    { id: 20, nama: "Nabila Aquarium",                        lat: 3.615265, lng: 98.642601 },
+    { id: 21, nama: "Ira",                                    lat: 3.615285, lng: 98.642760 },
+    { id: 22, nama: "Marini Photo",                           lat: 3.609371, lng: 98.644958 },
+    { id: 23, nama: "Dona",                                   lat: 3.610115, lng: 98.641748 },
+    { id: 24, nama: "Pak Slamet",                             lat: 3.603296, lng: 98.644310 },
+    { id: 25, nama: "Bunda Fano",                             lat: 3.612066, lng: 98.639791 }
+];
+
+// ── VARIABEL GLOBAL ──
+let dataTPS = [];
+let dataPemukiman = [];
+
+// ── INIT MAP ──
+const map = L.map('map', { zoomControl: false }).setView([3.6135, 98.6410], 15);
+L.control.zoom({ position: 'topleft' }).addTo(map);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; CartoDB & OpenStreetMap'
+}).addTo(map);
+
+map.on('mousemove', (e) => {
+    document.getElementById('coordText').textContent =
+        `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
+});
+
+// ── LOAD DATA ──
+function loadData() {
+    dataTPS = DATA_TPS.map(t => ({
+        id:     t.id,
+        nama:   t.nama,
+        alamat: t.alamat,
+        lat:    parseFloat(t.lat),
+        lng:    parseFloat(t.lng)
+    }));
+    dataPemukiman = DATA_PEMUKIMAN.map(p => ({
+        id:   p.id,
+        nama: p.nama,
+        lat:  parseFloat(p.lat),
+        lng:  parseFloat(p.lng)
+    }));
+
+    document.getElementById('statTPS').textContent       = dataTPS.length;
+    document.getElementById('statPemukiman').textContent = dataPemukiman.length;
+
+    renderData();
+    drawCircles();
+}
+
+// ── LAYER GROUP ──
+const layers = {
+    tps:       L.layerGroup().addTo(map),
+    pemukiman: L.layerGroup().addTo(map),
+    circle:    L.layerGroup().addTo(map),
+    coverage:  L.layerGroup().addTo(map)
+};
+const visibility = { tps: true, pemukiman: true, circle: true };
+let currentRadius = 500;
+
+// ── ICONS ──
+const mkPin = (color, icon) =>
+    `<div style="background:${color};width:32px;height:32px;border-radius:50% 50% 50% 0;
+    transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;
+    border:2px solid #fff;box-shadow:0 4px 12px rgba(0,0,0,0.2);">
+    <i class="${icon}" style="transform:rotate(45deg);font-size:16px;color:#fff"></i></div>`;
+
+const tpsIcon = L.divIcon({
+    className: '', iconSize: [32,32], iconAnchor: [16,32], popupAnchor: [0,-30],
+    html: mkPin('#ef4444', 'bi bi-trash3-fill')
+});
+const houseIcon = L.divIcon({
+    className: '', iconSize: [32,32], iconAnchor: [16,32], popupAnchor: [0,-30],
+    html: mkPin('#6366f1', 'bi bi-house-door-fill')
+});
+const userIcon = L.divIcon({
+    className: '', iconSize: [24,24], iconAnchor: [12,12],
+    html: `<div style="width:24px;height:24px;background:#10b981;border-radius:50%;
+           border:3px solid #fff;box-shadow:0 0 0 6px rgba(16,185,129,0.3)"></div>`
+});
+
+// ── DRAW CIRCLES ──
+function drawCircles() {
+    layers.circle.clearLayers();
+    dataTPS.forEach(tps => {
+        L.circle([tps.lat, tps.lng], {
+            radius: currentRadius,
+            color: '#10b981', fillColor: '#10b981',
+            fillOpacity: 0.1, weight: 1.5, dashArray: '5,5'
+        }).addTo(layers.circle);
+    });
+}
+
+// ── RENDER MARKERS ──
+function renderData() {
+    layers.tps.clearLayers();
+    layers.pemukiman.clearLayers();
+
+    dataTPS.forEach(tps => {
+        L.marker([tps.lat, tps.lng], { icon: tpsIcon })
+            .bindPopup(`<div class="popup-title">🗑️ ${tps.nama}</div>${tps.alamat}`)
+            .addTo(layers.tps);
+    });
+
+    dataPemukiman.forEach(p => {
+        L.marker([p.lat, p.lng], { icon: houseIcon })
+            .bindPopup(`<div class="popup-title" style="color:#6366f1">🏠 ${p.nama}</div>`)
+            .addTo(layers.pemukiman);
+    });
+}
+
+// ── TOGGLE LAYER ──
+function toggleLayer(key) {
+    visibility[key] = !visibility[key];
+    visibility[key] ? map.addLayer(layers[key]) : map.removeLayer(layers[key]);
+    document.getElementById(`${key}Toggle`).className =
+        `toggle-switch ${visibility[key] ? 'on' : ''}`;
+}
+
+// ── UPDATE RADIUS ──
+function updateRadius(val) {
+    currentRadius = parseInt(val);
+    document.getElementById('radiusDisplay').textContent =
+        currentRadius >= 1000
+            ? (currentRadius / 1000).toFixed(1) + ' km'
+            : currentRadius + ' m';
+    drawCircles();
+}
+
+// ── HAVERSINE ──
+const calcDist = (lat1, lon1, lat2, lon2) => {
+    const p = 0.017453292519943295;
+    const a = 0.5 - Math.cos((lat2 - lat1) * p) / 2 +
+        Math.cos(lat1 * p) * Math.cos(lat2 * p) *
+        (1 - Math.cos((lon2 - lon1) * p)) / 2;
+    return 12742 * Math.asin(Math.sqrt(a)) * 1000;
+};
+const fmtDist = m => m >= 1000 ? (m / 1000).toFixed(2) + ' km' : Math.round(m) + ' m';
+
+// ── ANALISIS PEMUKIMAN ──
+function analyzeAllCoverage() {
+    layers.coverage.clearLayers();
+    let covered = 0;
+
+    dataPemukiman.forEach(p => {
+        const nearest = dataTPS
+            .map(tps => ({ tps, dist: calcDist(p.lat, p.lng, tps.lat, tps.lng) }))
+            .sort((a, b) => a.dist - b.dist)[0];
+        if (!nearest) return;
+
+        const isCovered = nearest.dist <= currentRadius;
+        if (isCovered) covered++;
+
+        L.polyline([[p.lat, p.lng], [nearest.tps.lat, nearest.tps.lng]], {
+            color: isCovered ? '#10b981' : '#ef4444',
+            weight: 2, opacity: 0.8,
+            dashArray: isCovered ? '' : '6,6'
+        }).bindTooltip(`${fmtDist(nearest.dist)} ke ${nearest.tps.nama}`)
+          .addTo(layers.coverage);
+    });
+
+    document.getElementById('statCovered').textContent =
+        `${covered}/${dataPemukiman.length}`;
+    document.getElementById('statCovered').style.color =
+        covered === dataPemukiman.length ? '#10b981' : '#ef4444';
+
+    document.getElementById('noResult').style.display = 'none';
+    const panel = document.getElementById('resultPanel');
+    panel.innerHTML = `
+        <div style="color:var(--text);font-size:14px;line-height:1.6;">
+            <strong>Hasil Radius ${fmtDist(currentRadius)}:</strong><br>
+            <span style="color:#10b981;font-weight:700">${covered}</span> dari
+            <strong>${dataPemukiman.length}</strong> pemukiman berada dalam
+            radius ideal pelayanan TPS terdekat.
+        </div>`;
+    panel.classList.add('active');
+}
+
+// ── CARI TPS TERDEKAT (GPS) ──
+let userMarker, routingControl;
+
+function getLocation() {
+    if (!navigator.geolocation) {
+        alert('Browser Anda tidak mendukung fitur lokasi GPS.');
+        return;
+    }
+
+    const overlay     = document.getElementById('loadingOverlay');
+    const loadingText = document.getElementById('loadingText');
+    const gpsInfo     = document.getElementById('gpsInfo');
+
+    overlay.style.display  = 'flex';
+    loadingText.textContent = 'Mendeteksi Lokasi GPS...';
+    gpsInfo.textContent     = 'Pastikan GPS aktif di perangkat Anda.';
+
+    navigator.geolocation.getCurrentPosition(
+        // ── SUCCESS ──
+        function(pos) {
+            const lat      = pos.coords.latitude;
+            const lng      = pos.coords.longitude;
+            const accuracy = Math.round(pos.coords.accuracy);
+
+            loadingText.textContent = 'Menganalisis Rute Spasial...';
+            gpsInfo.textContent     = `Lokasi terdeteksi. Akurasi: ±${accuracy} meter.`;
+
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker([lat, lng], { icon: userIcon })
+                .addTo(map)
+                .bindPopup(`<div class="popup-title">📍 Lokasi Anda</div>Akurasi: ±${accuracy} m`)
+                .openPopup();
+            map.flyTo([lat, lng], 16, { duration: 1 });
+
+            const nearest = dataTPS
+                .map(tps => ({ tps, dist: calcDist(lat, lng, tps.lat, tps.lng) }))
+                .sort((a, b) => a.dist - b.dist)[0];
+
+            if (!nearest) {
+                overlay.style.display = 'none';
+                alert('Tidak ada data TPS tersedia.');
+                return;
+            }
+
+            if (routingControl) map.removeControl(routingControl);
+            routingControl = L.Routing.control({
+                waypoints: [
+                    L.latLng(lat, lng),
+                    L.latLng(nearest.tps.lat, nearest.tps.lng)
+                ],
+                routeWhileDragging: false,
+                fitSelectedRoutes: true,
+                showAlternatives: false,
+                lineOptions: { styles: [{ color: '#10b981', weight: 5, opacity: 0.9 }] },
+                createMarker: () => null
+            })
+            .on('routesfound', () => { overlay.style.display = 'none'; })
+            .on('routingerror', () => {
+                overlay.style.display = 'none';
+                alert('Server rute sibuk. Menampilkan garis estimasi.');
+                L.polyline([[lat, lng], [nearest.tps.lat, nearest.tps.lng]], {
+                    color: '#10b981', weight: 4
+                }).addTo(layers.coverage);
+            })
+            .addTo(map);
+
+            document.getElementById('noResult').style.display = 'none';
+            const panel = document.getElementById('resultPanel');
+            panel.innerHTML = `
+                <div class="result-nearest">
+                    <div class="result-icon"><i class="bi bi-trash-fill"></i></div>
+                    <div>
+                        <div class="result-name">Rekomendasi: ${nearest.tps.nama}</div>
+                        <div class="result-dist">
+                            Jarak Udara: ${fmtDist(nearest.dist)}
+                            &nbsp;|&nbsp; Akurasi GPS: ±${accuracy} m
+                        </div>
+                    </div>
+                </div>`;
+            panel.classList.add('active');
+        },
+        // ── ERROR ──
+        function(err) {
+            overlay.style.display = 'none';
+            const msg = {
+                1: 'Izin lokasi ditolak. Aktifkan izin lokasi di pengaturan browser Anda.',
+                2: 'Lokasi tidak tersedia. Pastikan GPS aktif.',
+                3: 'Waktu GPS habis (15 detik). Coba lagi di tempat terbuka.'
+            };
+            alert(msg[err.code] || 'Kesalahan tidak diketahui saat mendeteksi lokasi.');
+        },
+        // ── OPTIONS ──
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+}
+
+// ── RESET ──
+function resetAll() {
+    if (userMarker)     { map.removeLayer(userMarker);    userMarker = null; }
+    if (routingControl) { map.removeControl(routingControl); routingControl = null; }
+    layers.coverage.clearLayers();
+    document.getElementById('resultPanel').classList.remove('active');
+    document.getElementById('noResult').style.display = 'block';
+    document.getElementById('statCovered').textContent = '—';
+    document.getElementById('statCovered').style.color  = 'var(--text)';
+    map.flyTo([3.6135, 98.6410], 15);
+}
+
+// ── START ──
+loadData();
+
+</script>
+</body>
+</html>
